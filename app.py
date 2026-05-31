@@ -1,6 +1,7 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
+import pandas_ta as ta  # Garantindo a importação correta no ambiente python
 
 # Configuração inicial da página do Streamlit
 st.set_page_config(
@@ -20,28 +21,36 @@ st.info(
     "sendo que a saída (GAIN) será quando houver um fechamento abaixo da MME20."
 )
 
-# LISTA PRÉ-CARREGADA: O app já abre com todas essas ações, ETFs e BDRs configurados para o scanner varrer
+# LISTA ATUALIZADA: Apenas as suas ações iniciais + a sua lista exata de BDRs e ETFs
 ativos_padrao = [
-    # Ações sugeridas por você
+    # Suas Ações Iniciais
     "BPAC11.SA", "PRIO3.SA", "USIM5.SA", "ITUB4.SA", "B3SA3.SA", 
     "ITSA4.SA", "TAEE11.SA", "PETR3.SA", "EQTL3.SA", "MULT3.SA",
-    # Outras Ações de Alta Liquidez da B3
-    "VALE3.SA", "PETR4.SA", "BBAS3.SA", "BBDC4.SA", "ABEV3.SA", 
-    "WEGE3.SA", "RENT3.SA", "SUZB3.SA", "GGBR4.SA", "RADL3.SA",
-    # ETFs (Fundos de Índice)
-    "BOVA11.SA", "IVVB11.SA", "SMAL11.SA", "DIVO11.SA", "XFIX11.SA",
-    # BDRs (Ações Internacionais na B3)
-    "AAPL34.SA", "GOGL34.SA", "MELI34.SA", "MSFT34.SA", "AMZO34.SA", "TSLA34.SA"
+    
+    # Seus BDRs
+    "AAPL34.SA", "AMZO34.SA", "GOGL34.SA", "MSFT34.SA", "TSLA34.SA", "META34.SA",
+    "NFLX34.SA", "NVDC34.SA", "MELI34.SA", "BABA34.SA", "DISB34.SA", "PYPL34.SA",
+    "JNJB34.SA", "PGCO34.SA", "KOCH34.SA", "VISA34.SA", "WMTB34.SA", "NIKE34.SA",
+    "ADBE34.SA", "AVGO34.SA", "CSCO34.SA", "COST34.SA", "CVSH34.SA", "GECO34.SA",
+    "GSGI34.SA", "HDCO34.SA", "INTC34.SA", "JPMC34.SA", "MAEL34.SA", "MCDP34.SA",
+    "MDLZ34.SA", "MRCK34.SA", "ORCL34.SA", "PEP334.SA", "PFIZ34.SA", "PMIC34.SA",
+    "QCOM34.SA", "SBUX34.SA", "TGTB34.SA", "TMOS34.SA", "TXN34.SA", "UNHH34.SA",
+    "UPSB34.SA", "VZUA34.SA", "ABTT34.SA", "AMGN34.SA", "AXPB34.SA", "BAOO34.SA",
+    "C2OL34.SA", "HONB34.SA", "BICE34.SA", "BERK34.SA", "GOGL35.SA",
+    
+    # Seus ETFs / FIIs
+    "BOVA11.SA", "IVVB11.SA", "SMAL11.SA", "HASH11.SA", "GOLD11.SA", "DIVO11.SA",
+    "NDIV11.SA", "SPUB11.SA", "VWRA11.SA", "GARE11.SA", "UTLL11.SA", "GGRC11.SA"
 ]
 
-# Área de exibição/configuração na barra lateral (já preenchida automaticamente)
+# Área de exibição/configuração na barra lateral
 st.sidebar.header("Configurações do Rastreamento")
-st.sidebar.markdown("Os ativos abaixo serão escaneados simultaneamente de forma automatizada:")
+st.sidebar.markdown(f"Total de ativos configurados: **{len(ativos_padrao)}**")
 
 lista_ativos = st.sidebar.text_area(
     "Lista de Monitoramento do Scanner:",
     value=", ".join(ativos_padrao),
-    height=250
+    height=300
 )
 
 # Processando a string de texto para transformar em lista de tickers limpa
@@ -55,12 +64,10 @@ def verificar_bow_tie(df):
     if len(df) < 40:  # Evita erro se o histórico do ativo for muito curto
         return False, None, None
     
-    # Cálculo exato dos indicadores solicitados
+    # Cálculo exato dos indicadores utilizando pandas padrão para estabilidade
     df['MMA10'] = df['Close'].rolling(window=10).mean()
     df['MME20'] = df['Close'].ewm(span=20, adjust=False).mean()
     df['MME30'] = df['Close'].ewm(span=30, adjust=False).mean()
-    
-    # Análise focada no último candle completo (fechado) para evitar ruído de mercado aberto
     
     # Condição 1: Alinhamento de Alta Atual (MMA10 > MME20 > MME30)
     condicao_atual = (df['MMA10'].iloc[-1] > df['MME20'].iloc[-1]) and (df['MME20'].iloc[-1] > df['MME30'].iloc[-1])
@@ -84,7 +91,7 @@ def verificar_bow_tie(df):
 
 # Botão principal na tela para acionar o scanner de mercado
 if st.button("🚀 Executar Scanner Bow Tie", type="primary"):
-    st.write(f"🔍 Buscando dados e escaneando {len(tickers)} ativos em tempo real... Aguarde.")
+    st.write(f"🔍 Buscando dados e escaneando {len(tickers)} ativos... Aguarde.")
     
     resultados = []
     
@@ -93,7 +100,6 @@ if st.button("🚀 Executar Scanner Bow Tie", type="primary"):
     total_tickers = len(tickers)
     
     for idx, ticker in enumerate(tickers):
-        # Atualiza a barra proporcionalmente ao número de ativos processados
         progresso.progress((idx + 1) / total_tickers)
         
         try:
@@ -111,7 +117,7 @@ if st.button("🚀 Executar Scanner Bow Tie", type="primary"):
                 mme20_atual = dados['MME20'].iloc[-1]
                 
                 resultados.append({
-                    "Ativo": ticker,
+                    "Ativo": ticker.replace(".SA", ""), # Limpa o código para exibição estética
                     "Preço Atual (R$)": round(float(preco_atual), 2),
                     "Gatilho (Rompimento da Máxima)": round(float(gatilho), 2),
                     "Stop Inicial (Mínima do Sinal)": round(float(stop), 2),
@@ -119,7 +125,6 @@ if st.button("🚀 Executar Scanner Bow Tie", type="primary"):
                 })
                 
         except Exception:
-            # Caso algum ativo mude de código ou falhe, o scanner ignora e continua rastreando o resto
             continue
             
     # Remove a barra de progresso após finalizar
@@ -131,8 +136,6 @@ if st.button("🚀 Executar Scanner Bow Tie", type="primary"):
     if resultados:
         df_resultados = pd.DataFrame(resultados)
         st.success(f"🔥 Scanner concluído! Encontrado(s) {len(resultados)} ativo(s) configurando a Gravata Borboleta.")
-        
-        # Exibe a tabela estruturada contendo todos os sinais encontrados de uma vez só
         st.dataframe(df_resultados.set_index("Ativo"), use_container_width=True)
     else:
-        st.info("Varredura completa realizada. Nenhum ativo da lista gerou o sinal exato do Bow Tie no último fechamento.")
+        st.info("Varredura completa realizada. Nenhum ativo da sua lista fechou gerando o sinal exato do Bow Tie.")
