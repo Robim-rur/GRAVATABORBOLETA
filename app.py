@@ -1,7 +1,6 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import pandas_ta as ta  # Garantindo a importação correta no ambiente python
 
 # Configuração inicial da página do Streamlit
 st.set_page_config(
@@ -21,7 +20,7 @@ st.info(
     "sendo que a saída (GAIN) será quando houver um fechamento abaixo da MME20."
 )
 
-# LISTA ATUALIZADA: Apenas as suas ações iniciais + a sua lista exata de BDRs e ETFs
+# SUA LISTA EXATA DE ATIVOS
 ativos_padrao = [
     # Suas Ações Iniciais
     "BPAC11.SA", "PRIO3.SA", "USIM5.SA", "ITUB4.SA", "B3SA3.SA", 
@@ -104,10 +103,15 @@ if st.button("🚀 Executar Scanner Bow Tie", type="primary"):
         
         try:
             # Coleta o histórico diário direto da API do Yahoo Finance
-            dados = yf.download(ticker, period="6mo", interval="1d", progress=False)
+            # group_by='ticker' e auto_adjust ajudam a evitar quebras de colunas do yfinance
+            dados = yf.download(ticker, period="6mo", interval="1d", progress=False, group_by='ticker', auto_adjust=True)
             
             if dados.empty:
                 continue
+            
+            # Ajuste crucial para o yfinance atual: Se as colunas vierem multi-indexadas, nós limpamos
+            if isinstance(dados.columns, pd.MultiIndex):
+                dados.columns = dados.columns.get_level_values(-1)
                 
             sinal, gatilho, stop = verificar_bow_tie(dados)
             
@@ -138,4 +142,4 @@ if st.button("🚀 Executar Scanner Bow Tie", type="primary"):
         st.success(f"🔥 Scanner concluído! Encontrado(s) {len(resultados)} ativo(s) configurando a Gravata Borboleta.")
         st.dataframe(df_resultados.set_index("Ativo"), use_container_width=True)
     else:
-        st.info("Varredura completa realizada. Nenhum ativo da sua lista fechou gerando o sinal exato do Bow Tie.")
+        st.info("Varredura completa realizada. Nenhum ativo da sua lista fechou gerando o sinal exato do Bow Tie.")vo da sua lista fechou gerando o sinal exato do Bow Tie.")
