@@ -58,12 +58,12 @@ tickers = [t.strip().upper() for t in lista_ativos.split(",") if t.strip()]
 def verificar_bow_tie(df):
     """
     Função interna que analisa as médias e identifica se o padrão Bow Tie aconteceu
-    no último candle fechado.
+    no último candle fechado usando puramente funções nativas do pandas.
     """
-    if len(df) < 40:  # Evita erro se o histórico do ativo for muito curto
+    if len(df) < 40:
         return False, None, None
     
-    # Cálculo exato dos indicadores utilizando pandas padrão para estabilidade
+    # Cálculo exato das Médias Móveis usando apenas Pandas nativo
     df['MMA10'] = df['Close'].rolling(window=10).mean()
     df['MME20'] = df['Close'].ewm(span=20, adjust=False).mean()
     df['MME30'] = df['Close'].ewm(span=30, adjust=False).mean()
@@ -71,14 +71,14 @@ def verificar_bow_tie(df):
     # Condição 1: Alinhamento de Alta Atual (MMA10 > MME20 > MME30)
     condicao_atual = (df['MMA10'].iloc[-1] > df['MME20'].iloc[-1]) and (df['MME20'].iloc[-1] > df['MME30'].iloc[-1])
     
-    # Condição 2: Memória de Baixa Recente (Procura nos últimos 6 candles se estavam na ordem invertida)
+    # Condição 2: Memória de Baixa Recente (Procura nos últimos candles se estavam invertidas)
     veio_de_baixa = False
     for i in range(-7, -1):
         if (df['MME30'].iloc[i] > df['MME20'].iloc[i]) and (df['MME20'].iloc[i] > df['MMA10'].iloc[i]):
             veio_de_baixa = True
             break
             
-    # Condição 3: Gatilho do Cruzamento (No candle imediatamente anterior, o cruzamento completo ainda não existia)
+    # Condição 3: Gatilho do Cruzamento Recente
     cruzou_agora = (df['MMA10'].iloc[-2] <= df['MME20'].iloc[-2] or df['MMA10'].iloc[-2] <= df['MME30'].iloc[-2])
     
     if condicao_atual and veio_de_baixa and cruzou_agora:
@@ -93,8 +93,6 @@ if st.button("🚀 Executar Scanner Bow Tie", type="primary"):
     st.write(f"🔍 Buscando dados e escaneando {len(tickers)} ativos... Aguarde.")
     
     resultados = []
-    
-    # Barra de progresso visual do Streamlit
     progresso = st.progress(0)
     total_tickers = len(tickers)
     
@@ -103,25 +101,23 @@ if st.button("🚀 Executar Scanner Bow Tie", type="primary"):
         
         try:
             # Coleta o histórico diário direto da API do Yahoo Finance
-            # group_by='ticker' e auto_adjust ajudam a evitar quebras de colunas do yfinance
             dados = yf.download(ticker, period="6mo", interval="1d", progress=False, group_by='ticker', auto_adjust=True)
             
             if dados.empty:
                 continue
             
-            # Ajuste crucial para o yfinance atual: Se as colunas vierem multi-indexadas, nós limpamos
+            # Limpeza caso o DataFrame venha com colunas multi-indexadas
             if isinstance(dados.columns, pd.MultiIndex):
                 dados.columns = dados.columns.get_level_values(-1)
                 
             sinal, gatilho, stop = verificar_bow_tie(dados)
             
-            # Se o ativo atender a TODOS os critérios do Bow Tie de compra, adiciona na tabela
             if sinal:
                 preco_atual = dados['Close'].iloc[-1]
                 mme20_atual = dados['MME20'].iloc[-1]
                 
                 resultados.append({
-                    "Ativo": ticker.replace(".SA", ""), # Limpa o código para exibição estética
+                    "Ativo": ticker.replace(".SA", ""), 
                     "Preço Atual (R$)": round(float(preco_atual), 2),
                     "Gatilho (Rompimento da Máxima)": round(float(gatilho), 2),
                     "Stop Inicial (Mínima do Sinal)": round(float(stop), 2),
@@ -131,10 +127,8 @@ if st.button("🚀 Executar Scanner Bow Tie", type="primary"):
         except Exception:
             continue
             
-    # Remove a barra de progresso após finalizar
     progresso.empty()
     
-    # Apresentação dos resultados consolidados
     st.subheader("📋 Painel Consolidador de Sinais (Apenas Buy Side)")
     
     if resultados:
@@ -142,4 +136,4 @@ if st.button("🚀 Executar Scanner Bow Tie", type="primary"):
         st.success(f"🔥 Scanner concluído! Encontrado(s) {len(resultados)} ativo(s) configurando a Gravata Borboleta.")
         st.dataframe(df_resultados.set_index("Ativo"), use_container_width=True)
     else:
-        st.info("Varredura completa realizada. Nenhum ativo da sua lista fechou gerando o sinal exato do Bow Tie.")vo da sua lista fechou gerando o sinal exato do Bow Tie.")
+        st.info("Varredura completa realizada. Nenhum ativo da sua lista fechou gerando o sinal exato do Bow Tie.")
