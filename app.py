@@ -339,5 +339,4 @@ if st.button("🚀 Executar Scanner", type="primary"):
             "Nenhum ativo encontrado com "
             "alinhamento semanal + gatilho diário."
         )
-```
 
