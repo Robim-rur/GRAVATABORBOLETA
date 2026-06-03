@@ -1,23 +1,33 @@
+```python
 import streamlit as st
 import yfinance as yf
 import pandas as pd
 
-# Configuração inicial da página do Streamlit
+# ==========================================
+# CONFIGURAÇÃO DA PÁGINA
+# ==========================================
+
 st.set_page_config(
-    page_title="Scanner Bow Tie - Buy Side",
+    page_title="Scanner Bow Tie Profissional",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-st.title("🏹 Scanner Automático de Estratégia: Bow Tie (Gravata Borboleta)")
+st.title("🏹 Scanner Bow Tie Profissional")
 st.markdown("---")
 
-# Caixa de texto explicativa sobre o setup de compra
 st.info(
-    "**Regra de Operação (Buy Side):**\n\n"
-    "A entrada se dará quando houver o rompimento do candle de sinal no primeiro candle após o "
-    "cruzamento entre a MMA10 x MME20 x MME30 e o STOP na mínima do candle que deu o sinal, "
-    "sendo que a saída (GAIN) será quando houver um fechamento abaixo da MME20."
+    """
+    ✅ FILTRO PRINCIPAL: GRÁFICO SEMANAL
+    
+    O ativo somente será considerado se:
+    
+    MMA10 > MME20 > MME30 no SEMANAL
+    
+    ✅ GATILHO: GRÁFICO DIÁRIO
+    
+    Depois disso, o scanner procura o cruzamento recente no gráfico diário.
+    """
 )
 
 # SUA LISTA EXATA DE ATIVOS
@@ -68,98 +78,266 @@ ativos_padrao = [
     "JSRE11.SA","PVBI11.SA","HGRE11.SA",
 ]
 
-# Área de exibição/configuração na barra lateral
-st.sidebar.header("Configurações do Rastreamento")
-st.sidebar.markdown(f"Total de ativos configurados: **{len(ativos_padrao)}**")
+# ==========================================
+# SIDEBAR
+# ==========================================
+
+st.sidebar.header("⚙️ Configurações")
 
 lista_ativos = st.sidebar.text_area(
-    "Lista de Monitoramento do Scanner:",
+    "Lista de Ativos",
     value=", ".join(ativos_padrao),
     height=300
 )
 
-# Processando a string de texto para transformar em lista de tickers limpa
 tickers = [t.strip().upper() for t in lista_ativos.split(",") if t.strip()]
 
-def verificar_bow_tie(df):
-    """
-    Função interna que analisa as médias e identifica se o padrão Bow Tie aconteceu
-    no último candle fechado usando puramente funções nativas do pandas.
-    """
+# ==========================================
+# FUNÇÃO DAS MÉDIAS
+# ==========================================
+
+def calcular_medias(df):
+
+    df["MMA10"] = df["Close"].rolling(window=10).mean()
+
+    df["MME20"] = df["Close"].ewm(
+        span=20,
+        adjust=False
+    ).mean()
+
+    df["MME30"] = df["Close"].ewm(
+        span=30,
+        adjust=False
+    ).mean()
+
+    return df
+
+# ==========================================
+# FILTRO SEMANAL
+# ==========================================
+
+def filtro_semanal(df):
+
+    if len(df) < 40:
+        return False
+
+    df = calcular_medias(df)
+
+    alinhado = (
+        df["MMA10"].iloc[-1] > df["MME20"].iloc[-1]
+        and
+        df["MME20"].iloc[-1] > df["MME30"].iloc[-1]
+    )
+
+    return alinhado
+
+# ==========================================
+# GATILHO DIÁRIO
+# ==========================================
+
+def gatilho_diario(df):
+
     if len(df) < 40:
         return False, None, None
-    
-    # Cálculo exato das Médias Móveis usando apenas Pandas nativo
-    df['MMA10'] = df['Close'].rolling(window=10).mean()
-    df['MME20'] = df['Close'].ewm(span=20, adjust=False).mean()
-    df['MME30'] = df['Close'].ewm(span=30, adjust=False).mean()
-    
-    # Condição 1: Alinhamento de Alta Atual (MMA10 > MME20 > MME30)
-    condicao_atual = (df['MMA10'].iloc[-1] > df['MME20'].iloc[-1]) and (df['MME20'].iloc[-1] > df['MME30'].iloc[-1])
-    
-    # Condição 2: Memória de Baixa Recente (Procura nos últimos candles se estavam invertidas)
+
+    df = calcular_medias(df)
+
+    # --------------------------------------
+    # CONDIÇÃO ATUAL
+    # --------------------------------------
+
+    condicao_atual = (
+        df["MMA10"].iloc[-1] > df["MME20"].iloc[-1]
+        and
+        df["MME20"].iloc[-1] > df["MME30"].iloc[-1]
+    )
+
+    # --------------------------------------
+    # VEIO DE BAIXA
+    # --------------------------------------
+
     veio_de_baixa = False
+
     for i in range(-7, -1):
-        if (df['MME30'].iloc[i] > df['MME20'].iloc[i]) and (df['MME20'].iloc[i] > df['MMA10'].iloc[i]):
+
+        if (
+            df["MME30"].iloc[i] > df["MME20"].iloc[i]
+            and
+            df["MME20"].iloc[i] > df["MMA10"].iloc[i]
+        ):
+
             veio_de_baixa = True
             break
-            
-    # Condição 3: Gatilho do Cruzamento Recente
-    cruzou_agora = (df['MMA10'].iloc[-2] <= df['MME20'].iloc[-2] or df['MMA10'].iloc[-2] <= df['MME30'].iloc[-2])
-    
+
+    # --------------------------------------
+    # CRUZAMENTO RECENTE
+    # --------------------------------------
+
+    cruzou_agora = (
+
+        df["MMA10"].iloc[-2] <= df["MME20"].iloc[-2]
+
+        or
+
+        df["MMA10"].iloc[-2] <= df["MME30"].iloc[-2]
+
+    )
+
+    # --------------------------------------
+    # SINAL FINAL
+    # --------------------------------------
+
     if condicao_atual and veio_de_baixa and cruzou_agora:
-        preco_gatilho = df['High'].iloc[-1]  # Rompimento da máxima do candle de sinal
-        stop_loss = df['Low'].iloc[-1]      # Mínima do candle de sinal
+
+        preco_gatilho = df["High"].iloc[-1]
+
+        stop_loss = df["Low"].iloc[-1]
+
         return True, preco_gatilho, stop_loss
-        
+
     return False, None, None
 
-# Botão principal na tela para acionar o scanner de mercado
-if st.button("🚀 Executar Scanner Bow Tie", type="primary"):
-    st.write(f"🔍 Buscando dados e escaneando {len(tickers)} ativos... Aguarde.")
-    
+# ==========================================
+# BOTÃO PRINCIPAL
+# ==========================================
+
+if st.button("🚀 Executar Scanner", type="primary"):
+
     resultados = []
+
     progresso = st.progress(0)
-    total_tickers = len(tickers)
-    
+
+    total = len(tickers)
+
+    st.write(f"🔍 Escaneando {total} ativos...")
+
+    # ======================================
+    # LOOP PRINCIPAL
+    # ======================================
+
     for idx, ticker in enumerate(tickers):
-        progresso.progress((idx + 1) / total_tickers)
-        
+
+        progresso.progress((idx + 1) / total)
+
         try:
-            # Coleta o histórico diário direto da API do Yahoo Finance
-            dados = yf.download(ticker, period="6mo", interval="1d", progress=False, group_by='ticker', auto_adjust=True)
-            
-            if dados.empty:
+
+            # ==================================
+            # DADOS SEMANAIS
+            # ==================================
+
+            dados_semanal = yf.download(
+                ticker,
+                period="2y",
+                interval="1wk",
+                progress=False,
+                auto_adjust=True
+            )
+
+            # ==================================
+            # DADOS DIÁRIOS
+            # ==================================
+
+            dados_diario = yf.download(
+                ticker,
+                period="6mo",
+                interval="1d",
+                progress=False,
+                auto_adjust=True
+            )
+
+            # ==================================
+            # VALIDAÇÕES
+            # ==================================
+
+            if dados_semanal.empty:
                 continue
-            
-            # Limpeza caso o DataFrame venha com colunas multi-indexadas
-            if isinstance(dados.columns, pd.MultiIndex):
-                dados.columns = dados.columns.get_level_values(-1)
-                
-            sinal, gatilho, stop = verificar_bow_tie(dados)
-            
+
+            if dados_diario.empty:
+                continue
+
+            # ==================================
+            # MULTI INDEX
+            # ==================================
+
+            if isinstance(dados_semanal.columns, pd.MultiIndex):
+
+                dados_semanal.columns = (
+                    dados_semanal.columns.get_level_values(-1)
+                )
+
+            if isinstance(dados_diario.columns, pd.MultiIndex):
+
+                dados_diario.columns = (
+                    dados_diario.columns.get_level_values(-1)
+                )
+
+            # ==================================
+            # FILTRO SEMANAL
+            # ==================================
+
+            semanal_ok = filtro_semanal(dados_semanal)
+
+            if not semanal_ok:
+                continue
+
+            # ==================================
+            # GATILHO DIÁRIO
+            # ==================================
+
+            sinal, gatilho, stop = gatilho_diario(dados_diario)
+
             if sinal:
-                preco_atual = dados['Close'].iloc[-1]
-                mme20_atual = dados['MME20'].iloc[-1]
-                
+
+                dados_diario = calcular_medias(dados_diario)
+
+                preco_atual = dados_diario["Close"].iloc[-1]
+
+                mme20 = dados_diario["MME20"].iloc[-1]
+
                 resultados.append({
-                    "Ativo": ticker.replace(".SA", ""), 
-                    "Preço Atual (R$)": round(float(preco_atual), 2),
-                    "Gatilho (Rompimento da Máxima)": round(float(gatilho), 2),
-                    "Stop Inicial (Mínima do Sinal)": round(float(stop), 2),
-                    "MME20 de Saída (Alvo Dinâmico)": round(float(mme20_atual), 2)
+
+                    "Ativo": ticker.replace(".SA", ""),
+
+                    "Preço Atual": round(float(preco_atual), 2),
+
+                    "Gatilho": round(float(gatilho), 2),
+
+                    "Stop": round(float(stop), 2),
+
+                    "MME20 Saída": round(float(mme20), 2),
+
                 })
-                
+
         except Exception:
             continue
-            
+
     progresso.empty()
-    
-    st.subheader("📋 Painel Consolidador de Sinais (Apenas Buy Side)")
-    
+
+    # ======================================
+    # RESULTADOS
+    # ======================================
+
+    st.subheader("📋 Resultado do Scanner")
+
     if resultados:
+
         df_resultados = pd.DataFrame(resultados)
-        st.success(f"🔥 Scanner concluído! Encontrado(s) {len(resultados)} ativo(s) configurando a Gravata Borboleta.")
-        st.dataframe(df_resultados.set_index("Ativo"), use_container_width=True)
+
+        st.success(
+            f"✅ Encontrado(s) {len(resultados)} ativo(s) "
+            f"com alinhamento semanal + gatilho diário."
+        )
+
+        st.dataframe(
+            df_resultados.set_index("Ativo"),
+            use_container_width=True
+        )
+
     else:
-        st.info("Varredura completa realizada. Nenhum ativo da sua lista fechou gerando o sinal exato do Bow Tie.")
+
+        st.warning(
+            "Nenhum ativo encontrado com "
+            "alinhamento semanal + gatilho diário."
+        )
+```
+
